@@ -1,7 +1,15 @@
 # Baby Step Giant Step for SECPK1
 
 A simple Baby Step Giant Step program for SecpK1.
-
+This BSGS version is base publickey to calculate baby steps.
+```
+./BSGS -h
+ -v: Print version
+ -t nbThread: Secify number of thread
+ -rand: random startkey
+ -m maxStep: rand mode, number of operations before next search,default is 32 (2^32).
+ inFile: intput configuration file
+```
 Structure of the input file:
 * All values are in hex format
 * Public keys can be given either in compressed or uncompressed format
@@ -24,7 +32,7 @@ ex
 0459A3BFDAD718C9D3FAC7C187F1139F0815AC5D923910D516E186AFDA28B221DC994327554CED887AAE5D211A2407CDD025CFC3779ECB9C9D7F2F1A1DDF3E9FF8
 0335BB25364370D4DD14A9FC2B406D398C4B53C85BE58FCC7297BD34004602EBEC
 ```
-
+ 
 # How it works
 
 It uses a hash table (25bit hash) to store the baby steps.
