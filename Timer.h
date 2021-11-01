@@ -1,5 +1,5 @@
 /*
- * This file is part of the BSGS distribution (https://github.com/JeanLucPons/BSGS).
+ * This file is part of the BSGS distribution (https://github.com/JeanLucPons/Kangaroo).
  * Copyright (c) 2020 Jean Luc PONS.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -26,21 +26,24 @@
 
 class Timer {
 
-  public:
-    static void Init();
-    static double get_tick();
-    static void printResult(char *unit, int nbTry, double t0, double t1);
-    static std::string getResult(char *unit, int nbTry, double t0, double t1);
-    static int getCoreNumber();
-    static std::string getSeed(int size);
-    static void SleepMillis(uint32_t millis);
+public:
+  static void Init();
+  static double get_tick();
+  static void printResult(char *unit, int nbTry, double t0, double t1);
+  static std::string getResult(char *unit, int nbTry, double t0, double t1);
+  static int getCoreNumber();
+  static std::string getSeed(int size);
+  static void SleepMillis(uint32_t millis);
+  static uint32_t getSeed32();
+  static uint32_t getPID();
+  static std::string getTS();
 
 #ifdef WIN64
-    static LARGE_INTEGER perfTickStart;
-    static double perfTicksPerSec;
-    static LARGE_INTEGER qwTicksPerSec;
+  static LARGE_INTEGER perfTickStart;
+  static double perfTicksPerSec;
+  static LARGE_INTEGER qwTicksPerSec;
 #else
-    static time_t tickStart;
+  static time_t tickStart;
 #endif
 
 };

@@ -23,18 +23,18 @@
 
 class IntGroup {
 
-  public:
+public:
 
-    IntGroup(int size);
-    ~IntGroup();
-    void Set(Int *pts);
-    void ModInv();
+	IntGroup(int size);
+	~IntGroup();
+	void Set(Int *pts);
+	void ModInv();
 
-  private:
+private:
 
-    Int *ints;
-    Int *subp;
-    int size;
+	Int *ints;
+  Int *subp;
+  int size;
 
 };
 

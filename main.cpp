@@ -23,9 +23,11 @@
 #include <string.h>
 #include <stdexcept>
 
-#define RELEASE "1.1"
+#define RELEASE "1.3"
 
 using namespace std;
+
+#define CHECKARG(opt,n) if(a>=argc-1) {::printf(opt " missing argument #%d\n",n);exit(0);} else {a++;}
 
 // ------------------------------------------------------------------------------------------
 
@@ -34,6 +36,8 @@ void printUsage() {
     printf("BSGS [-v] [-t nbThread] inFile\n");
     printf(" -v: Print version\n");
     printf(" -t nbThread: Secify number of thread\n");
+    printf(" -rand: random startkey\n");
+    printf(" -m maxStep: rand mode, number of operations before next search,default is 32 (2^32).\n");
     printf(" inFile: intput configuration file\n");
     exit(0);
 
@@ -62,10 +66,38 @@ int getInt(string name,char *v) {
 
 // ------------------------------------------------------------------------------------------
 
+double getDouble(string name,char *v) {
+
+  double r;
+
+  try {
+
+    r = std::stod(string(v));
+
+  } catch(std::invalid_argument&) {
+
+    printf("Invalid %s argument, number expected\n",name.c_str());
+    exit(-1);
+
+  }
+
+  return r;
+
+}
+
+// ------------------------------------------------------------------------------------------
+
+// Default params
+static bool randomFlag = false;
+static double maxStep = 32.0;
+
+// ------------------------------------------------------------------------------------------
+
 int main(int argc, char* argv[]) {
 
     // Global Init
     Timer::Init();
+    rseed(Timer::getSeed32());
 
     // Init SecpK1
     Secp256K1 *secp = new Secp256K1();
@@ -78,8 +110,15 @@ int main(int argc, char* argv[]) {
     while (a < argc) {
 
         if(strcmp(argv[a], "-t") == 0) {
-            a++;
+            CHECKARG("-t",1);
             nbCPUThread = getInt("nbCPUThread",argv[a]);
+            a++;
+        } else if (strcmp(argv[a], "-rand") == 0) {
+            randomFlag = true;
+            a++;
+        } else if (strcmp(argv[a], "-m") == 0) {
+            CHECKARG("-m",1);
+            maxStep = getDouble("maxStep",argv[a]);
             a++;
         } else if (strcmp(argv[a], "-h") == 0) {
             printUsage();
@@ -95,7 +134,7 @@ int main(int argc, char* argv[]) {
 
     printf("BSGS v" RELEASE "\n");
 
-    BSGS *v = new BSGS(secp);
+    BSGS *v = new BSGS(secp,randomFlag,maxStep);
     if( !v->ParseConfigFile(configFile) )
         exit(-1);
     v->Run(nbCPUThread);

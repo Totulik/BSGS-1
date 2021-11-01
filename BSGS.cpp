@@ -39,9 +39,11 @@ Point _2GSn;
 
 // ----------------------------------------------------------------------------
 
-BSGS::BSGS(Secp256K1 *secp) {
+BSGS::BSGS(Secp256K1 *secp,bool randomFlag,double maxStep) {
 
     this->secp = secp;
+    this->randomFlag = randomFlag;
+    this->maxStep = maxStep;
 
     // Compute Generator table G[n] = (n+1)*G (Baby steps group adding table)
     Point g = secp->G;
@@ -158,8 +160,10 @@ void BSGS::FillBabySteps(TH_PARAM *ph) {
     grp->Set(dx);
 
     Int km(&ph->startKey);
-    km.Add((uint64_t)CPU_GRP_SIZE / 2);
+    // km.Add((uint64_t)CPU_GRP_SIZE / 2);
     startP = secp->ComputePublicKey(&km);
+    startP = secp->AddDirect(startP, keyToSearch);
+    // ::printf("startP:%s\n", startP.x.GetBase16().c_str());
 
     ph->hasStarted = true;
 
@@ -319,12 +323,12 @@ void BSGS::SolveKey(TH_PARAM *ph) {
     km.Add(&secp->order);
     km.Sub((uint64_t)(CPU_GRP_SIZE/2)*bsSize);
     startP = secp->ComputePublicKey(&km);
-    startP = secp->AddDirect(keyToSearch,startP);
+    // startP = secp->AddDirect(keyToSearch,startP);
 
     ph->hasStarted = true;
 
-    if(keyIdx==0)
-        ::printf("GiantStep Thread %d: %s\n",ph->threadId,ph->startKey.GetBase16().c_str());
+    // if(keyIdx==0)
+    ::printf("GiantStep Thread %d: %s\n",ph->threadId,ph->startKey.GetBase16().c_str());
 
     // Substart ((s*CPU_GRP_SIZE+i)*bsSize).G to the point to solve and look for a match into the hashtable
 
@@ -424,16 +428,30 @@ void BSGS::SolveKey(TH_PARAM *ph) {
                     bigS.Mult((uint64_t)(CPU_GRP_SIZE));
                     bigS.Add(i);
                     pk.Mult(&bigS);
-                    Int bigO(off[o]);
+                    // Int bigO(off[o]);
+                    Int bigO((uint64_t)(CPU_GRP_SIZE / 2));
+                    bigO.Sub(off[o]);
                     pk.Add(&bigO);
                     pk.Add(&ph->startKey);
                     // Check
                     Point p = secp->ComputePublicKey(&pk);
-                    if(p.equals(keyToSearch)) {
-                        // Key solved
-                        ::printf("\nKey#%2d Pub:  0x%s \n",keyIdx,secp->GetPublicKeyHex(true,p).c_str());
-                        ::printf("       Priv: 0x%s \n",pk.GetBase16().c_str());
-                        endOfSearch = true;
+                    for(keyIdx=0; keyIdx<keysToSearch.size(); keyIdx++) {
+                        keyToSearch = keysToSearch[keyIdx];
+                        if(p.equals(keyToSearch)) {
+                            // Key solved
+                            FILE* f = fopen("KEYFOUNDKEYFOUND.txt", "a+");
+                            if (f != NULL) {
+                                ::fprintf(f, "\nKey#%2d Pub:  0x%s \n",keyIdx,secp->GetPublicKeyHex(true,p).c_str());
+                                ::fprintf(f, "       Priv: 0x%s \n",pk.GetBase16().c_str());
+                                fclose(f);
+                            }
+                            ::printf("\nKey#%2d Pub:  0x%s \n",keyIdx,secp->GetPublicKeyHex(true,p).c_str());
+                            ::printf("       Priv: 0x%s \n",pk.GetBase16().c_str());
+                            keysToSearch.erase(keysToSearch.begin() + keyIdx);
+                            if(keysToSearch.size()==0) {
+                                endOfSearch = true;
+                            }
+                        }
                     }
                 }
             }
@@ -549,20 +567,22 @@ void BSGS::Run(int nbThread) {
         int gSize = CPU_GRP_SIZE;
         ::printf("Warning, BSSize/nbThread is not a multiple of %d\n",gSize);
     }
+    for(keyIdx=0; keyIdx<keysToSearch.size(); keyIdx++) {
+        keyToSearch = keysToSearch[keyIdx];
+        // Launch Baby Step threads
+        for(int i = 0; i < nbCPUThread; i++) {
+            params[i].threadId = i;
+            params[i].isRunning = true;
+            params[i].startKey.bits64[0] = k;
+            thHandles[i] = LaunchThread(_FillBS,params + i);
+            k += kPerThread;
+        }
 
-    // Launch Baby Step threads
-    for(int i = 0; i < nbCPUThread; i++) {
-        params[i].threadId = i;
-        params[i].isRunning = true;
-        params[i].startKey.bits64[0] = k;
-        thHandles[i] = LaunchThread(_FillBS,params + i);
-        k += kPerThread;
+        // Wait for end of baby step calculation
+        Process(params,"MKey/s");
+        JoinThreads(thHandles,nbCPUThread);
+        FreeHandles(thHandles,nbCPUThread);
     }
-
-    // Wait for end of baby step calculation
-    Process(params,"MKey/s");
-    JoinThreads(thHandles,nbCPUThread);
-    FreeHandles(thHandles,nbCPUThread);
 
 
     // Sort HashTable
@@ -585,29 +605,8 @@ void BSGS::Run(int nbThread) {
     JoinThreads(thHandles,nbCPUThread);
     FreeHandles(thHandles,nbCPUThread);
 
-    // Compute range per thread
-    Int bs(bsSize);
-    Int nbTh;
-    Int r;
-    nbTh.SetInt32(nbThread);
-    Int rgPerTh(&rangeEnd);
-    rgPerTh.Sub(&rangeStart);
-    rgPerTh.AddOne();
-    rgPerTh.Div(&nbTh,&r);
-    if(!r.IsZero()) {
-        ::printf("Warning, range is not a multiple of nbThread\n");
-    }
-    Int stepPerThred(&rgPerTh);
-    Int grpSize;
-    grpSize.SetInt32(CPU_GRP_SIZE);
-    stepPerThred.Div(&bs,&r);
-    if(!r.IsZero()) stepPerThred.AddOne();
-    stepPerThred.Div(&grpSize,&r);
-    if(!r.IsZero()) {
-        ::printf("Warning, range is not a multiple of nbThread*%d\n",CPU_GRP_SIZE);
-    }
-
     // Compute Giant steps adding table GSn[n] = -(n+1)*BS
+    Int bs(bsSize);
     bs.Neg();
     bs.Add(&secp->order);
 
@@ -623,13 +622,41 @@ void BSGS::Run(int nbThread) {
     // _2GSn = -CPU_GRP_SIZE*BS
     _2GSn = secp->DoubleDirect(GSn[CPU_GRP_SIZE / 2 - 1]);
 
-    for(keyIdx =0; keyIdx<keysToSearch.size(); keyIdx++) {
-
-        keyToSearch = keysToSearch[keyIdx];
+    while(keysToSearch.size()!=0) {
+        // Compute range per thread
+        Int bs(bsSize);
+        Int nbTh;
+        Int r;
+        Int sk;
+        nbTh.SetInt32(nbThread);
+        Int rgPerTh(&rangeEnd);
+        if(randomFlag) {
+            Int randStart;
+            randStart.Rand(&rangeStart, &rangeEnd);
+            rgPerTh.Sub(&randStart);
+            sk.Set(&randStart);
+        } else {
+            rgPerTh.Sub(&rangeStart);
+            sk.Set(&rangeStart);
+        }
+        rgPerTh.AddOne();
+        rgPerTh.Div(&nbTh,&r);
+        if(!r.IsZero()) {
+            ::printf("Warning, range is not a multiple of nbThread\n");
+        }
+        Int stepPerThred(&rgPerTh);
+        Int grpSize;
+        grpSize.SetInt32(CPU_GRP_SIZE);
+        stepPerThred.Div(&bs,&r);
+        if(!r.IsZero()) stepPerThred.AddOne();
+        stepPerThred.Div(&grpSize,&r);
+        if(!r.IsZero()) {
+            ::printf("Warning, range is not a multiple of nbThread*%d\n",CPU_GRP_SIZE);
+        }
 
         // Lanch Giant Step threads
         endOfSearch = false;
-        Int sk(&rangeStart);
+
         for(int i = 0; i < nbCPUThread; i++) {
             params[i].threadId = i;
             params[i].isRunning = true;

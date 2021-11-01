@@ -63,7 +63,7 @@ class BSGS {
 
   public:
 
-    BSGS(Secp256K1 *secp);
+    BSGS(Secp256K1 *secp,bool randomFlag,double maxStep);
     void Run(int nbThread);
     bool ParseConfigFile(std::string fileName);
 
@@ -107,7 +107,8 @@ class BSGS {
     Point keyToSearch;
     int keyIdx;
     bool endOfSearch;
-
+    bool randomFlag;
+    double maxStep;
 };
 
 #endif // BTCCOLLIDERH
