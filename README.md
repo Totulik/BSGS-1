@@ -11,7 +11,7 @@ in wsl2 test passed.
 80000000000000
 0385a30d8413af4f8f9e6312400f2d194fe14f02e719b24c3f83bf1fd233a8f963
 ```
-block bloom filter memery use 532M (filter size:148M)
+block bloom filter mem use 532M (filter size:148M)
 ```
 BSGS v1.1
 BabyStep:0x4000000 (2^26.00)
@@ -36,7 +36,7 @@ Key# 0 Pub:  0x0385A30D8413AF4F8F9E6312400F2D194FE14F02E719B24C3F83BF1FD233A8F96
 Done: Total time 25s
 ```
 
-orignal BSGS memery use 1770M:
+orignal BSGS mem use 1770M:
 ```
 BSGS v1.1
 BabyStep:0x4000000 (2^26.00)
