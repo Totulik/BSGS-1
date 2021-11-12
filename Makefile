@@ -14,14 +14,14 @@ OBJET = $(addprefix $(OBJDIR)/, \
       SECPK1/IntGroup.o main.o SECPK1/Random.o \
       Timer.o SECPK1/Int.o SECPK1/IntMod.o \
       SECPK1/Point.o SECPK1/SECP256K1.o \
-      BSGS.o HashTable.o Thread.o)
+      BSGS.o HashTable.o Thread.o libfilter.so)
 
 CXX        = g++
 
 ifdef debug
-CXXFLAGS   = -m64 -mssse3 -Wno-unused-result -Wno-write-strings -g -I. -I$(CUDA)/include
+CXXFLAGS   =  -march=native -Wno-unused-result -Wno-write-strings -g -I. -I$(CUDA)/include
 else
-CXXFLAGS   =  -m64 -mssse3 -Wno-unused-result -Wno-write-strings -O2 -I. -I$(CUDA)/include
+CXXFLAGS   =  -march=native -Wno-unused-result -Wno-write-strings -lfilter -O2 -I. -I$(CUDA)/include
 endif
 LFLAGS     = -lpthread
 

@@ -46,69 +46,69 @@ class BSGS;
 // Input thread parameters
 typedef struct {
 
-    BSGS *obj;
-    int  threadId;
-    bool isRunning;
-    bool hasStarted;
-    bool isWaiting;
-    Int  startKey;
-    Int  nbStep;
-    uint32_t sortStart;
-    uint32_t sortEnd;
+  BSGS *obj;
+  int  threadId;
+  bool isRunning;
+  bool hasStarted;
+  bool isWaiting;
+  Int  startKey;
+  Int  nbStep;
+  uint32_t sortStart;
+  uint32_t sortEnd;
 
 } TH_PARAM;
 
 
 class BSGS {
 
-  public:
+public:
 
-    BSGS(Secp256K1 *secp,bool randomFlag,double maxStep);
-    void Run(int nbThread);
-    bool ParseConfigFile(std::string fileName);
+  BSGS(Secp256K1 *secp);
+  void Run(int nbThread);
+  bool ParseConfigFile(std::string fileName);
+  uint64_t BinarySearch(Point &p);
 
-    // Threaded procedures
-    void FillBabySteps(TH_PARAM *p);
-    void SolveKey(TH_PARAM *p);
-    void SortTable(TH_PARAM *p);
+  // Threaded procedures
+  void FillBabySteps(TH_PARAM *p);
+  void SolveKey(TH_PARAM *p);
+  void SortTable(TH_PARAM *p);
 
-  private:
+private:
 
-    std::string GetTimeStr(double s);
+  std::string GetTimeStr(double s);
 
 #ifdef WIN64
-    HANDLE ghMutex;
-    THREAD_HANDLE LaunchThread(LPTHREAD_START_ROUTINE func,TH_PARAM *p);
+  HANDLE ghMutex;
+  THREAD_HANDLE LaunchThread(LPTHREAD_START_ROUTINE func,TH_PARAM *p);
 #else
-    pthread_mutex_t  ghMutex;
-    THREAD_HANDLE LaunchThread(void *(*func) (void *), TH_PARAM *p);
+  pthread_mutex_t  ghMutex;
+  THREAD_HANDLE LaunchThread(void *(*func) (void *), TH_PARAM *p);
 #endif
 
-    void JoinThreads(THREAD_HANDLE *handles, int nbThread);
-    void FreeHandles(THREAD_HANDLE *handles, int nbThread);
-    void Process(TH_PARAM *params,std::string unit);
+  void JoinThreads(THREAD_HANDLE *handles, int nbThread);
+  void FreeHandles(THREAD_HANDLE *handles, int nbThread);
+  void Process(TH_PARAM *params,std::string unit);
 
-    uint64_t getCPUCount();
-    bool isAlive(TH_PARAM *p);
-    bool hasStarted(TH_PARAM *p);
-    bool isWaiting(TH_PARAM *p);
+  uint64_t getCPUCount();
+  bool isAlive(TH_PARAM *p);
+  bool hasStarted(TH_PARAM *p);
+  bool isWaiting(TH_PARAM *p);
 
-    Secp256K1 *secp;
-    HashTable hashTable;
-    uint64_t counters[256];
-    int  nbCPUThread;
-    double startTime;
+  Secp256K1 *secp;
+  HashTable hashTable;
+  uint64_t counters[256];
+  int  nbCPUThread;
+  double startTime;
 
-    uint64_t bsSize;
-    uint64_t kPerThread;
-    Int rangeStart;
-    Int rangeEnd;
-    std::vector<Point> keysToSearch;
-    Point keyToSearch;
-    int keyIdx;
-    bool endOfSearch;
-    bool randomFlag;
-    double maxStep;
+  uint64_t bsSize;
+  uint64_t kPerThread;
+  Int rangeStart;
+  Int rangeEnd;
+  std::vector<Point> keysToSearch;
+  Point keyToSearch;
+  int keyIdx;
+  bool endOfSearch;
+
 };
 
 #endif // BTCCOLLIDERH

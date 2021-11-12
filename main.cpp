@@ -23,23 +23,19 @@
 #include <string.h>
 #include <stdexcept>
 
-#define RELEASE "1.3"
+#define RELEASE "1.1"
 
 using namespace std;
-
-#define CHECKARG(opt,n) if(a>=argc-1) {::printf(opt " missing argument #%d\n",n);exit(0);} else {a++;}
 
 // ------------------------------------------------------------------------------------------
 
 void printUsage() {
 
-    printf("BSGS [-v] [-t nbThread] inFile\n");
-    printf(" -v: Print version\n");
-    printf(" -t nbThread: Secify number of thread\n");
-    printf(" -rand: random startkey\n");
-    printf(" -m maxStep: rand mode, number of operations before next search,default is 32 (2^32).\n");
-    printf(" inFile: intput configuration file\n");
-    exit(0);
+  printf("BSGS [-v] [-t nbThread] inFile\n");
+  printf(" -v: Print version\n");
+  printf(" -t nbThread: Secify number of thread\n");
+  printf(" inFile: intput configuration file\n");
+  exit(0);
 
 }
 
@@ -47,32 +43,11 @@ void printUsage() {
 
 int getInt(string name,char *v) {
 
-    int r;
-
-    try {
-
-        r = std::stoi(string(v));
-
-    } catch(std::invalid_argument&) {
-
-        printf("Invalid %s argument, number expected\n",name.c_str());
-        exit(-1);
-
-    }
-
-    return r;
-
-}
-
-// ------------------------------------------------------------------------------------------
-
-double getDouble(string name,char *v) {
-
-  double r;
+  int r;
 
   try {
 
-    r = std::stod(string(v));
+    r = std::stoi(string(v));
 
   } catch(std::invalid_argument&) {
 
@@ -87,58 +62,44 @@ double getDouble(string name,char *v) {
 
 // ------------------------------------------------------------------------------------------
 
-// Default params
-static bool randomFlag = false;
-static double maxStep = 32.0;
-
-// ------------------------------------------------------------------------------------------
-
 int main(int argc, char* argv[]) {
 
-    // Global Init
-    Timer::Init();
-    rseed(Timer::getSeed32());
+  // Global Init
+  Timer::Init();
 
-    // Init SecpK1
-    Secp256K1 *secp = new Secp256K1();
-    secp->Init();
+  // Init SecpK1
+  Secp256K1 *secp = new Secp256K1();
+  secp->Init();
 
-    int a = 1;
-    int nbCPUThread = Timer::getCoreNumber();
-    string configFile = "";
+  int a = 1;
+  int nbCPUThread = Timer::getCoreNumber();
+  string configFile = "";
 
-    while (a < argc) {
+  while (a < argc) {
 
-        if(strcmp(argv[a], "-t") == 0) {
-            CHECKARG("-t",1);
-            nbCPUThread = getInt("nbCPUThread",argv[a]);
-            a++;
-        } else if (strcmp(argv[a], "-rand") == 0) {
-            randomFlag = true;
-            a++;
-        } else if (strcmp(argv[a], "-m") == 0) {
-            CHECKARG("-m",1);
-            maxStep = getDouble("maxStep",argv[a]);
-            a++;
-        } else if (strcmp(argv[a], "-h") == 0) {
-            printUsage();
-        } else if (a == argc - 1) {
-            configFile = string(argv[a]);
-            a++;
-        } else {
-            printf("Unexpected %s argument\n",argv[a]);
-            exit(-1);
-        }
-
+    if(strcmp(argv[a], "-t") == 0) {
+      a++;
+      nbCPUThread = getInt("nbCPUThread",argv[a]);
+      a++;
+    } else if (strcmp(argv[a], "-h") == 0) {
+      printUsage();
+    } else if (a == argc - 1) {
+      configFile = string(argv[a]);
+      a++;
+    } else {
+      printf("Unexpected %s argument\n",argv[a]);
+      exit(-1);
     }
 
-    printf("BSGS v" RELEASE "\n");
+  }
 
-    BSGS *v = new BSGS(secp,randomFlag,maxStep);
-    if( !v->ParseConfigFile(configFile) )
-        exit(-1);
-    v->Run(nbCPUThread);
+  printf("BSGS v" RELEASE "\n");
 
-    return 0;
+  BSGS *v = new BSGS(secp);
+  if( !v->ParseConfigFile(configFile) )
+    exit(-1);
+  v->Run(nbCPUThread);
+
+  return 0;
 
 }
