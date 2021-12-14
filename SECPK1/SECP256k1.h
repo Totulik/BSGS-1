@@ -1,5 +1,5 @@
 /*
- * This file is part of the BSGS distribution (https://github.com/JeanLucPons/BSGS).
+ * This file is part of the BSGS distribution (https://github.com/JeanLucPons/Kangaroo).
  * Copyright (c) 2020 Jean Luc PONS.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -29,7 +29,8 @@ public:
   Secp256K1();
   ~Secp256K1();
   void  Init();
-  Point ComputePublicKey(Int *privKey);
+  Point ComputePublicKey(Int *privKey,bool reduce=true);
+  std::vector<Point> ComputePublicKeys(std::vector<Int> &privKeys);
   Point NextKey(Point &key);
   bool  EC(Point &p);
 
@@ -42,14 +43,17 @@ public:
   Point Double(Point &p);
   Point DoubleDirect(Point &p);
 
+  std::vector<Point> AddDirect(std::vector<Point> &p1,std::vector<Point> &p2);
+
   Point G;                 // Generator
   Int   order;             // Curve order
+  Int GetY(Int x, bool isEven);
 
 private:
 
   uint8_t GetByte(std::string &str,int idx);
 
-  Int GetY(Int x, bool isEven);
+  // Int GetY(Int x, bool isEven);
   Point GTable[256*32];       // Generator table
 
 };

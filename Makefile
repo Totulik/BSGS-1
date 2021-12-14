@@ -14,14 +14,14 @@ OBJET = $(addprefix $(OBJDIR)/, \
       SECPK1/IntGroup.o main.o SECPK1/Random.o \
       Timer.o SECPK1/Int.o SECPK1/IntMod.o \
       SECPK1/Point.o SECPK1/SECP256K1.o \
-      BSGS.o HashTable.o Thread.o libfilter.so)
+      BSGS.o HashTable.o Thread.o libfilter.a)
 
 CXX        = g++
 
 ifdef debug
-CXXFLAGS   =  -march=native -Wno-unused-result -Wno-write-strings -g -I. -I$(CUDA)/include
+CXXFLAGS   = -march=native -Wno-unused-result -Wno-write-strings -g -I. -I$(CUDA)/include
 else
-CXXFLAGS   =  -march=native -Wno-unused-result -Wno-write-strings -lfilter -O2 -I. -I$(CUDA)/include
+CXXFLAGS   = -march=native -Wno-unused-result -Wno-write-strings -O3 -I. -I$(CUDA)/include
 endif
 LFLAGS     = -lpthread
 
@@ -34,7 +34,7 @@ all: bsgs
 
 bsgs: $(OBJET)
 	@echo Making BSGS...
-	$(CXX) $(OBJET) $(LFLAGS) -o bsgs
+	$(CXX) $(OBJET) $(LFLAGS) -lm -o bsgs
 
 $(OBJET): | $(OBJDIR) $(OBJDIR)/SECPK1
 

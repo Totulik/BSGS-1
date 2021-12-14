@@ -1,5 +1,5 @@
 /*
- * This file is part of the BSGS distribution (https://github.com/JeanLucPons/BSGS).
+ * This file is part of the BSGS distribution (https://github.com/JeanLucPons/Kangaroo).
  * Copyright (c) 2020 Jean Luc PONS.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -58,6 +58,20 @@ double Timer::get_tick() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (double)(tv.tv_sec - tickStart) + (double)tv.tv_usec / 1e6;
+#endif
+
+}
+
+uint32_t Timer::getSeed32() {
+  return ::strtoul(getSeed(4).c_str(),NULL,16);
+}
+
+uint32_t Timer::getPID() {
+
+#ifdef WIN64
+  return GetCurrentProcessId();
+#else
+  return (uint32_t)getpid();
 #endif
 
 }
@@ -173,5 +187,31 @@ void Timer::SleepMillis(uint32_t millis) {
 #else
   usleep(millis*1000);
 #endif
+
+}
+
+std::string Timer::getTS() {
+
+  std::string ret;
+  time_t now = time(NULL);
+  char *time = ctime(&now);
+
+  if(time[8]==' ') time[8]='0';
+  ret.push_back(time[8]);
+  ret.push_back(time[9]);
+  ret.push_back(time[4]);
+  ret.push_back(time[5]);
+  ret.push_back(time[6]);
+  ret.push_back(time[22]);
+  ret.push_back(time[23]);
+  ret.push_back('_');
+  ret.push_back(time[11]);
+  ret.push_back(time[12]);
+  ret.push_back(time[14]);
+  ret.push_back(time[15]);
+  ret.push_back(time[17]);
+  ret.push_back(time[18]);
+
+  return ret;
 
 }

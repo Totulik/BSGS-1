@@ -1,5 +1,5 @@
 /*
- * This file is part of the BSGS distribution (https://github.com/JeanLucPons/BSGS).
+ * This file is part of the BSGS distribution (https://github.com/JeanLucPons/Kangaroo).
  * Copyright (c) 2020 Jean Luc PONS.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -55,6 +55,7 @@ Point::~Point() {
 void Point::Set(Point &p) {
   x.Set(&p.x);
   y.Set(&p.y);
+  z.Set(&p.z);
 }
 
 bool Point::isZero() {

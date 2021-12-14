@@ -63,10 +63,10 @@ class BSGS {
 
 public:
 
-  BSGS(Secp256K1 *secp);
+  BSGS(Secp256K1 *secp,bool randomFlag,double maxStep);
   void Run(int nbThread);
   bool ParseConfigFile(std::string fileName);
-  uint64_t BinarySearch(Point &p);
+  int64_t BinarySearch(Point &p, Int pk);
 
   // Threaded procedures
   void FillBabySteps(TH_PARAM *p);
@@ -108,7 +108,11 @@ private:
   Point keyToSearch;
   int keyIdx;
   bool endOfSearch;
-
+  double bloomFilterSize;
+  bool randomFlag;
+  double maxStep;
+  int nbFindedKey;
+  int nbKeysToSearch;
 };
 
 #endif // BTCCOLLIDERH

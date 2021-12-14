@@ -175,7 +175,7 @@ void BSGS::Process(TH_PARAM *params,std::string unit) {
 
   // Wait that all threads have started
   while(!hasStarted(params))
-    Timer::SleepMillis(50);
+    Timer::SleepMillis(5);
 
   t0 = Timer::get_tick();
   startTime = t0;
@@ -205,29 +205,31 @@ void BSGS::Process(TH_PARAM *params,std::string unit) {
 
     if(isAlive(params) && !endOfSearch) {
 
-      ::printf("\r[%.2f %s][Cnt 2^%.2f][%s][%.1fMB]  ",
+      ::printf("\r[%.2f %s][Count 2^%.2f][%s]  ",
         avgKeyRate / 1000000.0,unit.c_str(),
         log2((double)count),
-        GetTimeStr(t1 - startTime).c_str(),
-        hashTable.GetSizeMB()
+        GetTimeStr(t1 - startTime).c_str()
         );
 
     }
 
     lastCount = count;
     t0 = t1;
-
+    if (randomFlag && count > (uint64_t)pow(2.0,maxStep)) {
+        ::printf("\n");
+        endOfSearch = true;
+        Timer::SleepMillis(500);
+    }
   }
 
   count = getCPUCount();
   t1 = Timer::get_tick();
   
   if( !endOfSearch ) {
-    ::printf("\r[%.2f %s][Cnt 2^%.2f][%s][%.1fMB]  \n",
+    ::printf("\r[%.2f %s][Count 2^%.2f][%s]  \n",
       avgKeyRate / 1000000.0,unit.c_str(),
       log2((double)count),
-      GetTimeStr(t1 - startTime).c_str(),
-      hashTable.GetSizeMB()
+      GetTimeStr(t1 - startTime).c_str()
     );
   }
 

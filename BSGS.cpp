@@ -27,7 +27,10 @@
 #include <pthread.h>
 #endif
 
-#include "filter/block.hpp"
+extern "C" {
+#include "filter/block.h"
+}
+
 using namespace std;
 
 // Baby steps
@@ -38,14 +41,16 @@ Point _2Gn;
 Point GSn[CPU_GRP_SIZE / 2];
 Point _2GSn;
 
-uint64_t ndv = 0x4000000;
-const double fpp = 0.001;
-auto bpfilter = filter::BlockFilter::CreateWithNdvFpp(ndv, fpp);
+libfilter_block bloomFilter;
+libfilter_block keysToSearchBloomFilter;
+
 // ----------------------------------------------------------------------------
 
-BSGS::BSGS(Secp256K1 *secp) {
+BSGS::BSGS(Secp256K1 *secp,bool randomFlag,double maxStep) {
 
   this->secp = secp;
+  this->randomFlag = randomFlag;
+  this->maxStep = maxStep;
 
   // Compute Generator table G[n] = (n+1)*G (Baby steps group adding table)
   Point g = secp->G;
@@ -120,6 +125,8 @@ bool BSGS::ParseConfigFile(std::string fileName) {
 
   }
 
+  nbKeysToSearch = keysToSearch.size();
+
 #ifdef WIN64
   ::printf("BabyStep:0x%016I64X (2^%.2f)\n",bsSize,log2((double)bsSize));
 #else
@@ -128,7 +135,7 @@ bool BSGS::ParseConfigFile(std::string fileName) {
 
   ::printf("Start:%s\n",rangeStart.GetBase16().c_str());
   ::printf("Stop :%s\n",rangeEnd.GetBase16().c_str());
-  ::printf("Keys :%d\n",(int)keysToSearch.size());
+  ::printf("Keys :%d\n",nbKeysToSearch);
 
   return true;
 
@@ -162,8 +169,9 @@ void BSGS::FillBabySteps(TH_PARAM *ph) {
   grp->Set(dx);
 
   Int km(&ph->startKey);
-  km.Add((uint64_t)CPU_GRP_SIZE / 2);
+  km.Add((uint64_t)CPU_GRP_SIZE / 2 - 1);
   startP = secp->ComputePublicKey(&km);
+  startP = secp->AddDirect(startP, keyToSearch);
 
   ph->hasStarted = true;
 
@@ -211,7 +219,7 @@ void BSGS::FillBabySteps(TH_PARAM *ph) {
       pp.x.ModAdd(&_p);
       pp.x.ModSub(&Gn[i].x);           // rx = pow2(s) - p1.x - p2.x;
 
-#if 1
+#if 0
       pp.y.ModSub(&Gn[i].x,&pp.x);
       pp.y.ModMulK1(&_s);
       pp.y.ModSub(&Gn[i].y);           // ry = - p2.y - s*(ret.x-p2.x);  
@@ -229,7 +237,7 @@ void BSGS::FillBabySteps(TH_PARAM *ph) {
       pn.x.ModAdd(&_p);
       pn.x.ModSub(&Gn[i].x);          // rx = pow2(s) - p1.x - p2.x;
 
-#if 1
+#if 0
       pn.y.ModSub(&Gn[i].x,&pn.x);
       pn.y.ModMulK1(&_s);
       pn.y.ModAdd(&Gn[i].y);          // ry = - p2.y - s*(ret.x-p2.x);  
@@ -253,7 +261,7 @@ void BSGS::FillBabySteps(TH_PARAM *ph) {
     pn.x.ModAdd(&_p);
     pn.x.ModSub(&Gn[i].x);
 
-#if 1
+#if 0
     pn.y.ModSub(&Gn[i].x,&pn.x);
     pn.y.ModMulK1(&_s);
     pn.y.ModAdd(&Gn[i].y);
@@ -264,9 +272,9 @@ void BSGS::FillBabySteps(TH_PARAM *ph) {
     // Add to table
     LOCK(ghMutex);
     for(uint64_t i=0;i<CPU_GRP_SIZE;i++) {
+      libfilter_block_add_hash(pts[i].x.bits64[0], &bloomFilter);
       // hashTable.Add(&pts[i].x, (uint64_t)( ph->startKey.bits64[0] + s*CPU_GRP_SIZE + i) );
-      bpfilter.InsertHash((uint64_t)pts[i].y.bits64[0]);
-      // ::printf("ptsy[%" PRIu64 "]:%s\n", i, pts[i].y.GetBase16().c_str());
+      // ::printf("x[%" PRIu64 "]:%s\n", i, pts[i].x.GetBase16().c_str());
     }
     UNLOCK(ghMutex);
     counters[thId] += CPU_GRP_SIZE;
@@ -294,38 +302,45 @@ void BSGS::FillBabySteps(TH_PARAM *ph) {
 
 }
 
+// ----------------------------------------------------------------------------
 
-uint64_t BSGS::BinarySearch(Point &p) {
-  uint64_t max = bsSize;
-  uint64_t min = 0x1ULL;
-  uint64_t middle = 0x0ULL;
-  uint64_t ret = 0x0ULL;
+int64_t BSGS::BinarySearch(Point &p, Int pk) {
+  int64_t max = bsSize - 1;
+  int64_t min = 0;
+  int64_t middle;
+  int64_t ret = 0;
 
   Point pointMiddle;
   Point pointCurrent;
+  Point pkP;
+  Point tagetP;
+
+  pkP = secp->ComputePublicKey(&pk);
 
   while (min <= max) {
     middle = min + (max - min) / 2;
+    // ::printf("min:%ld,max:%ld,mid:%ld\n", min, max, middle);
     Int current(middle);
     pointMiddle = secp->ComputePublicKey(&current);
-
-    // ::printf("current:%" PRIx64 " middle:%s\n",middle, pointMiddle.x.GetBase16().c_str());
-    if (pointMiddle.x.IsEqual(&p.x)) {
+    pointMiddle.y.ModNeg();
+    tagetP = secp->AddDirect(pkP, pointMiddle);
+    // ::printf("target:%s\n", tagetP.x.GetBase16().c_str());
+    // ::printf("current:%" PRIx64 " middle:%s\n", middle, pointMiddle.x.GetBase16().c_str());
+    if ( libfilter_block_find_hash(tagetP.x.bits64[0], &keysToSearchBloomFilter) ) {
       ret = middle;
       break;
     } else {
-        pointMiddle.y.ModNeg();
-        pointCurrent = secp->AddDirect(p, pointMiddle);
+      pointCurrent = secp->AddDirect(p, pointMiddle);
 
-      if (bpfilter.FindHash(pointCurrent.y.bits64[0])) {
+      if (libfilter_block_find_hash(pointCurrent.x.bits64[0], &bloomFilter)) {
         min = middle + 1;
       } else {
         max = middle - 1;
       }
-      pointMiddle.Clear();
     }
   }
-  // ::printf("ret:%ld\n",_ret);
+
+  // ::printf("ret2:%ld\n", ret);
   return ret;
 }
 
@@ -361,12 +376,12 @@ void BSGS::SolveKey(TH_PARAM *ph) {
   km.Add(&secp->order);
   km.Sub((uint64_t)(CPU_GRP_SIZE/2)*bsSize);
   startP = secp->ComputePublicKey(&km);
-  startP = secp->AddDirect(keyToSearch,startP);
+  // startP = secp->AddDirect(keyToSearch,startP);
 
   ph->hasStarted = true;
 
-  if(keyIdx==0)
-    ::printf("GiantStep Thread %d: %s\n",ph->threadId,ph->startKey.GetBase16().c_str());
+  // if(keyIdx==0)
+  ::printf("GiantStep Thread %d: %s\n",ph->threadId,ph->startKey.GetBase16().c_str());
 
   // Substart ((s*CPU_GRP_SIZE+i)*bsSize).G to the point to solve and look for a match into the hashtable
 
@@ -407,7 +422,7 @@ void BSGS::SolveKey(TH_PARAM *ph) {
       pp.x.ModAdd(&_p);
       pp.x.ModSub(&GSn[i].x);           // rx = pow2(s) - p1.x - p2.x;
 
-#if 1
+#if 0
       pp.y.ModSub(&GSn[i].x,&pp.x);
       pp.y.ModMulK1(&_s);
       pp.y.ModSub(&GSn[i].y);           // ry = - p2.y - s*(ret.x-p2.x);  
@@ -425,7 +440,7 @@ void BSGS::SolveKey(TH_PARAM *ph) {
       pn.x.ModAdd(&_p);
       pn.x.ModSub(&GSn[i].x);          // rx = pow2(s) - p1.x - p2.x;
 
-#if 1
+#if 0
       pn.y.ModSub(&GSn[i].x,&pn.x);
       pn.y.ModMulK1(&_s);
       pn.y.ModAdd(&GSn[i].y);          // ry = - p2.y - s*(ret.x-p2.x);  
@@ -449,7 +464,7 @@ void BSGS::SolveKey(TH_PARAM *ph) {
     pn.x.ModAdd(&_p);
     pn.x.ModSub(&GSn[i].x);
 
-#if 1
+#if 0
     pn.y.ModSub(&GSn[i].x,&pn.x);
     pn.y.ModMulK1(&_s);
     pn.y.ModAdd(&GSn[i].y);
@@ -458,28 +473,49 @@ void BSGS::SolveKey(TH_PARAM *ph) {
     pts[0] = pn;
 
     // Check key
-    for(uint64_t i = 0; i<CPU_GRP_SIZE; i++) {
-      if(bpfilter.FindHash((uint64_t)pts[i].y.bits64[0]) ) {
-        // ::printf("ptsx[%" PRIu64 "]:%s\n", i, pts[i].x.GetBase16().c_str());
-        // ::printf("ptsy[%" PRIu64 "]:%s\n", i, pts[i].y.GetBase16().c_str());
-        uint64_t offset;
-        offset = BinarySearch(pts[i]);
-        if (offset !=0) {
-         Int pk(bsSize);
-         Int bigS(&s);
-         bigS.Mult((uint64_t)(CPU_GRP_SIZE));
-         bigS.Add(i);
-         pk.Mult(&bigS);
-         Int bigO(offset);
-         pk.Add(&bigO);
-         pk.Add(&ph->startKey);
-         // Check
-         Point p = secp->ComputePublicKey(&pk);
-         if(p.x.IsEqual(&keyToSearch.x)) {
-           // Key solved
-            ::printf("\nKey#%2d Pub:  0x%s \n", keyIdx, secp->GetPublicKeyHex(true, p).c_str());
-            ::printf("       Priv: 0x%s \n", pk.GetBase16().c_str());
-            endOfSearch = true;
+    for (uint64_t i = 0; i < CPU_GRP_SIZE; i++) {
+
+      if (libfilter_block_find_hash(pts[i].x.bits64[0], &bloomFilter)) {
+        // ::printf("x[S:%d][I:%" PRIu64 "]:%s\n", s.GetInt32(), i, pts[i].x.GetBase16().c_str());
+        // ::printf("y[S:%d][I:%" PRIu64 "]:%s\n", s.GetInt32(), i, pts[i].y.GetBase16().c_str());
+
+        int64_t offset;
+        Int pk(bsSize);
+        Int bigS(&s);
+        bigS.Mult((uint64_t)(CPU_GRP_SIZE));
+        bigS.Add(i);
+        pk.Mult(&bigS);
+        pk.Add(&ph->startKey);
+        pts[i].y = secp->GetY(pts[i].x, false);
+        offset = BinarySearch(pts[i], pk);
+        if (offset <= 0) {
+          pts[i].y.ModNeg();
+          offset = BinarySearch(pts[i], pk);
+        }
+        if (offset > 0) {
+          // ::printf("pk:0x%s\n", pk.GetBase16().c_str());
+          Int bigO(offset);
+          pk.Sub(&bigO);
+          // pk.Add(&ph->startKey);
+          // Check
+          Point p = secp->ComputePublicKey(&pk);
+          // ::printf("pk2:0x%s\n", pk.GetBase16().c_str());
+          for (keyIdx = 0; keyIdx < keysToSearch.size(); keyIdx++) {
+            keyToSearch = keysToSearch[keyIdx];
+            if (p.x.IsEqual(&keyToSearch.x)) {
+              // Key solved
+              FILE *f = fopen("KEYFOUNDKEYFOUND.txt", "a+");
+              if (f != NULL) {
+                ::fprintf(f, "\nKey#%2d Pub: 0x%s \n", keyIdx, secp->GetPublicKeyHex(true, p).c_str());
+                ::fprintf(f, "     Priv: 0x%s \n", pk.GetBase16().c_str());
+                fclose(f);
+              }
+              ::printf("\nKey#%2d Pub: 0x%s \n", keyIdx, secp->GetPublicKeyHex(true, p).c_str());
+              ::printf("      Priv: 0x%s \n", pk.GetBase16().c_str());
+              nbFindedKey++;
+              keysToSearch.erase(keysToSearch.begin() + keyIdx);
+              endOfSearch = true;
+            }
           }
         }
       }
@@ -512,24 +548,6 @@ void BSGS::SolveKey(TH_PARAM *ph) {
 
 // ----------------------------------------------------------------------------
 
-void BSGS::SortTable(TH_PARAM *ph) {
-
-  int thId = ph->threadId;
-  counters[thId] = 0;
-  ::printf("Sort Thread %d: %08X -> %08X\n",ph->threadId,ph->sortStart,ph->sortEnd);
-  ph->hasStarted = true;
-
-  for(uint32_t i=ph->sortStart;i<ph->sortEnd;i++) {
-    hashTable.Sort(i);
-    counters[thId]++;  
-  }
-
-  ph->isRunning = false;
-
-}
-
-// ----------------------------------------------------------------------------
-
 #ifdef WIN64
 DWORD WINAPI _FillBS(LPVOID lpParam) {
 #else
@@ -549,18 +567,6 @@ void *_SolveKey(void *lpParam) {
 #endif
   TH_PARAM *p = (TH_PARAM *)lpParam;
   p->obj->SolveKey(p);
-  return 0;
-}
-
-// ----------------------------------------------------------------------------
-
-#ifdef WIN64
-DWORD WINAPI _SortTable(LPVOID lpParam) {
-#else
-void *_SortTable(void *lpParam) {
-#endif
-  TH_PARAM *p = (TH_PARAM *)lpParam;
-  p->obj->SortTable(p);
   return 0;
 }
 
@@ -596,64 +602,37 @@ void BSGS::Run(int nbThread) {
     ::printf("Warning, BSSize/nbThread is not a multiple of %d\n",gSize);
   }
 
-  // Launch Baby Step threads
-  for(int i = 0; i < nbCPUThread; i++) {
-    params[i].threadId = i;
-    params[i].isRunning = true;
-    params[i].startKey.bits64[0] = k;
-    thHandles[i] = LaunchThread(_FillBS,params + i);
-    k += kPerThread;
-  }
+  /* init bloom filter */
+  unsigned need_bytes = libfilter_block_bytes_needed(bsSize*keysToSearch.size(), 0.0001);
+  libfilter_block_init(need_bytes, &bloomFilter);
+  double bloomFilterSize = (libfilter_block_size_in_bytes(&bloomFilter) / (1024.0 * 1024.0));
+  ::printf("Bloom filter size:%.1f MB\n", bloomFilterSize);
+  unsigned keysToSearchNeedBytes = libfilter_block_bytes_needed(keysToSearch.size(), 0.0001);
+  libfilter_block_init(keysToSearchNeedBytes, &keysToSearchBloomFilter);
 
-  // Wait for end of baby step calculation
-  Process(params,"MKey/s");
-  JoinThreads(thHandles,nbCPUThread);
-  FreeHandles(thHandles,nbCPUThread);
 
-  /*
-  // Sort HashTable
+  /* Fill baby step */
+  for (keyIdx = 0; keyIdx < keysToSearch.size(); keyIdx++) {
+    keyToSearch = keysToSearch[keyIdx];
+    libfilter_block_add_hash(keyToSearch.x.bits64[0], &keysToSearchBloomFilter);
+    // Launch Baby Step threads
+    for (int i = 0; i < nbCPUThread; i++) {
+      params[i].threadId = i;
+      params[i].isRunning = true;
+      params[i].startKey.bits64[0] = k;
+      thHandles[i] = LaunchThread(_FillBS, params + i);
+      k += kPerThread;
+    }
 
-  uint32_t t = 0;
-  uint32_t hPerThread = (HASH_SIZE/nbCPUThread);
-
-  // Launch Sort threads
-  for(int i = 0; i < nbCPUThread; i++) {
-    params[i].threadId = i;
-    params[i].isRunning = true;
-    params[i].sortStart = t;
-    params[i].sortEnd = (i==nbCPUThread-1)?HASH_SIZE:t+hPerThread;
-    thHandles[i] = LaunchThread(_SortTable,params + i);
-    t += hPerThread;
-  }
-
-  // Wait for end of table sort
-  Process(params,"MSort/s");
-  JoinThreads(thHandles,nbCPUThread);
-  FreeHandles(thHandles,nbCPUThread);
-  */
-  // Compute range per thread
-  Int bs(bsSize);
-  Int nbTh;
-  Int r;
-  nbTh.SetInt32(nbThread);
-  Int rgPerTh(&rangeEnd);
-  rgPerTh.Sub(&rangeStart);
-  rgPerTh.AddOne();
-  rgPerTh.Div(&nbTh,&r);
-  if(!r.IsZero()) {
-    ::printf("Warning, range is not a multiple of nbThread\n");
-  }
-  Int stepPerThred(&rgPerTh);
-  Int grpSize;
-  grpSize.SetInt32(CPU_GRP_SIZE);
-  stepPerThred.Div(&bs,&r);
-  if(!r.IsZero()) stepPerThred.AddOne();
-  stepPerThred.Div(&grpSize,&r);
-  if(!r.IsZero()) {
-    ::printf("Warning, range is not a multiple of nbThread*%d\n",CPU_GRP_SIZE);
+    // Wait for end of baby step calculation
+    Process(params, "MKey/s");
+    JoinThreads(thHandles, nbCPUThread);
+    FreeHandles(thHandles, nbCPUThread);
+    k = 1;
   }
 
   // Compute Giant steps adding table GSn[n] = -(n+1)*BS
+  Int bs(bsSize);
   bs.Neg();
   bs.Add(&secp->order);
 
@@ -669,13 +648,44 @@ void BSGS::Run(int nbThread) {
   // _2GSn = -CPU_GRP_SIZE*BS
   _2GSn = secp->DoubleDirect(GSn[CPU_GRP_SIZE / 2 - 1]);
 
-  for(keyIdx =0; keyIdx<keysToSearch.size(); keyIdx++) {
-
-    keyToSearch = keysToSearch[keyIdx];
+  nbFindedKey == 0;
+  while (nbKeysToSearch != nbFindedKey) {
+    // Compute range per thread
+    Int bs(bsSize);
+    Int nbTh;
+    Int r;
+    Int sk;
+    nbTh.SetInt32(nbThread);
+    Int rgPerTh(&rangeEnd);
+    if (randomFlag) {
+      Int randStart;
+      randStart.Rand(&rangeStart, &rangeEnd);
+      rgPerTh.Sub(&randStart);
+      sk.Set(&randStart);
+    }
+    else {
+      rgPerTh.Sub(&rangeStart);
+      sk.Set(&rangeStart);
+    }
+    rgPerTh.AddOne();
+    rgPerTh.Div(&nbTh, &r);
+    if (!r.IsZero()) {
+      ::printf("Warning, range is not a multiple of nbThread\n");
+    }
+    Int stepPerThred(&rgPerTh);
+    Int grpSize;
+    grpSize.SetInt32(CPU_GRP_SIZE);
+    stepPerThred.Div(&bs, &r);
+    if (!r.IsZero())
+      stepPerThred.AddOne();
+    stepPerThred.Div(&grpSize, &r);
+    if (!r.IsZero()) {
+      ::printf("Warning, range is not a multiple of nbThread*%d\n", CPU_GRP_SIZE);
+    }
 
     // Lanch Giant Step threads
     endOfSearch = false;
-    Int sk(&rangeStart);
+    // Int sk(&rangeStart);
     for(int i = 0; i < nbCPUThread; i++) {
       params[i].threadId = i;
       params[i].isRunning = true;
